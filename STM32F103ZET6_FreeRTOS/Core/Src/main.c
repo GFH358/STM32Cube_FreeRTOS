@@ -66,6 +66,13 @@ const osThreadAttr_t UartTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
+/* Definitions for OLEDTask */
+osThreadId_t OLEDTaskHandle;
+const osThreadAttr_t OLEDTask_attributes = {
+  .name = "OLEDTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* Definitions for Uart_Queue */
 osMessageQueueId_t Uart_QueueHandle;
 const osMessageQueueAttr_t Uart_Queue_attributes = {
@@ -82,6 +89,7 @@ static void MX_UART4_Init(void);
 void StartDefaultTask(void *argument);
 void LedTaskDeal(void *argument);
 void UartTaskDeal(void *argument);
+void OLEDTaskDeal(void *argument);
 
 /* USER CODE BEGIN PFP */
 int cnt1 = 0;
@@ -89,6 +97,7 @@ int cnt1 = 0;
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+//PB5红灯交替闪烁
 void user_test_led(void){
 	//HAL_Delay(1000);
 //	if(HAL_GPIO_ReadPin(GPIOE,GPIO_PIN_3)==GPIO_PIN_RESET){
@@ -110,17 +119,19 @@ uint8_t user_cam[10];
 //	HAL_UART_Receive_IT(&huart4, user_cam, 2);
 //}
 
+//*串口中断
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size){
 	if(huart == &huart4){
-		HAL_UART_Transmit_IT(&huart4, user_cam, Size);
+		HAL_UART_Transmit_IT(&huart4, user_cam, Size);//*把数据返回给上位�?
 
+		//*向消息队列发送一个消�?
 		uint8_t flag = 1;
 		BaseType_t err = xQueueSendToBackFromISR(Uart_QueueHandle,&flag,pdMS_TO_TICKS(50));
 		if(err ==errQUEUE_FULL){
 			xQueueReset(Uart_QueueHandle);
 		}
 
-		HAL_UARTEx_ReceiveToIdle_IT(&huart4, user_cam, 10);
+		HAL_UARTEx_ReceiveToIdle_IT(&huart4, user_cam, 10);//*重新打开串口接收
 
 	}
 
@@ -193,6 +204,9 @@ int main(void)
 
   /* creation of UartTask */
   UartTaskHandle = osThreadNew(UartTaskDeal, NULL, &UartTask_attributes);
+
+  /* creation of OLEDTask */
+  OLEDTaskHandle = osThreadNew(OLEDTaskDeal, NULL, &OLEDTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -346,31 +360,12 @@ __weak void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
-	int cnt = 0;
-	OLED_Init();
-	OLED_Clear();
-	OLED_Display_On();
-	OLED_ShowString(0,5,"TEST-ok");//显示字符
+
   for(;;)
   {
-//    osDelay(1000);
-//    user_test_led();
-	uint8_t flag;
-	if(xQueueReceive(Uart_QueueHandle,&flag,pdMS_TO_TICKS(50)) ==pdTRUE){
-		OLED_ShowString(0,5,user_cam);//显示字符
-		//OLED_ShowString(0,5,"TEST-AA");//显示字符
-		continue;
-	}
-    cnt = cnt + 2;
-    if(cnt > 99){
-    	cnt=0;
-    }
-    //OLED_ShowString(0,5,"TEST-ok");//显示字符
-    OLED_ShowNumber(30,30,cnt,2,16);//显示数字
 
     osDelay(100);
-//    	  	  HAL_Delay(100);
-    OLED_Refresh_Gram();
+
   }
   /* USER CODE END 5 */
 }
@@ -391,7 +386,7 @@ void LedTaskDeal(void *argument)
   {
 //        osDelay(1000);
        user_test_led();
-        vTaskDelayUntil(&pxPreviousWakeTime,pdMS_TO_TICKS(1000));
+        vTaskDelayUntil(&pxPreviousWakeTime,pdMS_TO_TICKS(1000));//FreeRTOS周期性绝对延时
 //        vTaskDelay(pdMS_TO_TICKS(1000));
   }
   /* USER CODE END LedTaskDeal */
@@ -410,7 +405,7 @@ void UartTaskDeal(void *argument)
   /* Infinite loop */
   char user_data[] = "Uart task init ok";
   //HAL_UART_Receive_IT(&huart4, user_cam, 2);
-  HAL_UARTEx_ReceiveToIdle_IT(&huart4, user_cam, 10);//�?启窗口空闲接�?
+  HAL_UARTEx_ReceiveToIdle_IT(&huart4, user_cam, 10);//启动串口接收
   HAL_UART_Transmit_IT(&huart4, user_data, 18);
 
   for(;;)
@@ -419,6 +414,45 @@ void UartTaskDeal(void *argument)
     osDelay(1);
   }
   /* USER CODE END UartTaskDeal */
+}
+
+/* USER CODE BEGIN Header_OLEDTaskDeal */
+/**
+* @brief Function implementing the OLEDTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_OLEDTaskDeal */
+void OLEDTaskDeal(void *argument)
+{
+  /* USER CODE BEGIN OLEDTaskDeal */
+  /* Infinite loop */
+	int cnt = 0;
+		OLED_Init();
+		OLED_Clear();
+		OLED_Display_On();
+		OLED_ShowString(0,5,"OLED init ok");//显示字符
+	  for(;;)
+	  {
+	//    osDelay(1000);
+	//    user_test_led();
+		uint8_t flag;
+		if(xQueueReceive(Uart_QueueHandle,&flag,pdMS_TO_TICKS(50)) ==pdTRUE){
+			OLED_ShowString(0,15,user_cam);//显示串口接收到的字符
+			//OLED_ShowString(0,5,"TEST-AA");//显示字符
+			continue;
+		}
+	    cnt = cnt + 2;
+	    if(cnt > 99){
+	    	cnt=0;
+	    }
+	    OLED_ShowNumber(30,30,cnt,2,16);//显示数字
+
+	    osDelay(100);
+
+	    OLED_Refresh_Gram();
+	  }
+  /* USER CODE END OLEDTaskDeal */
 }
 
 /**
